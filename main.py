@@ -14,34 +14,31 @@ def extract_match(pattern, text):
 
 
 def extract_company_name(text):
-    """Extracts a valid company name while removing extra words and \n characters."""
+    """Extracts a valid company name while ensuring no invoice-related words are captured."""
 
     # Define business-related keywords
-    company_keywords = r"(Technology|Networks|Consultancy|Solutions|Services|Group|Engineering|Enterprises|Trading|Investments|Corporation|Holding)"
+    company_keywords = r"(Technology|Networks|Consultancy|Solutions|Services|Group|Engineering|Enterprises|Trading|Investments|Corporation|Holding|Club|Hotel|LLC|W\.?L\.?L|L\.?L\.?C)"
+    
+    # Remove common invoice-related words before extraction
+    cleaned_text = re.sub(
+        r"\b(INVOICE|TOTAL|BANK DETAILS|ACCOUNT|DESCRIPTION|AMOUNT|SWIFT CODE|IBAN|P\.O\. Box|DATE|CUSTOMER)\b.*", 
+        "", text, flags=re.IGNORECASE | re.MULTILINE
+    )
 
-    # **Step 1: If `\n` exists, start searching after it (but don't keep `\n`)**
-    text = re.sub(r"^\s*IN\n", "", text, flags=re.IGNORECASE)  # Removes "IN\n" at the beginning if present
-
-    # **Step 2: Extract the company name using business keywords**
+    # Extract the first valid company name
     match = re.search(
-        rf"\b([\w\s&\-\(\)]+(?:{company_keywords}|W\.?L\.?L|L\.?L\.?C)\b)", 
-        text, re.IGNORECASE | re.MULTILINE
+        rf"([\w\s&\-\(\)]+(?:{company_keywords})\b)", 
+        cleaned_text, re.IGNORECASE | re.MULTILINE
     )
 
     if match:
         company_name = match.group(1).strip()
 
-        # **Step 3: Remove any remaining `\n` from the extracted name**
-        company_name = company_name.replace("\n", " ")
-
-        # **Step 4: Ensure no unwanted extra words are included**
-        if "bank" not in company_name.lower() and "swift" not in company_name.lower():
+        # Ensure it’s not extracting incorrect fields
+        if not re.match(r"^\d", company_name) and "bank" not in company_name.lower() and "swift" not in company_name.lower():
             return company_name
 
     return "Unknown Company"
-
-
-
 
 
 def extract_total_amount(text):
