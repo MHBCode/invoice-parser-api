@@ -12,13 +12,37 @@ def extract_match(pattern, text):
         return match.group(0)  # Otherwise, return the full match
     return None
 
+
 def extract_company_name(text):
-    """Extracts the first valid company name (Arabic or English) and prevents capturing full text."""
+    """Extracts a valid company name while removing extra words and \n characters."""
+
+    # Define business-related keywords
+    company_keywords = r"(Technology|Networks|Consultancy|Solutions|Services|Group|Engineering|Enterprises|Trading|Investments|Corporation|Holding)"
+
+    # **Step 1: If `\n` exists, start searching after it (but don't keep `\n`)**
+    text = re.sub(r"^\s*IN\n", "", text, flags=re.IGNORECASE)  # Removes "IN\n" at the beginning if present
+
+    # **Step 2: Extract the company name using business keywords**
     match = re.search(
-        r"^(شركة\s[^\n,]+|THE DIPLOMATIC CLUB|[A-Za-z\s&]+ (LLC|W.L.L.|Ltd|Co\.?))",
+        rf"\b([\w\s&\-\(\)]+(?:{company_keywords}|W\.?L\.?L|L\.?L\.?C)\b)", 
         text, re.IGNORECASE | re.MULTILINE
     )
-    return match.group(0).strip() if match else "Unknown Company"
+
+    if match:
+        company_name = match.group(1).strip()
+
+        # **Step 3: Remove any remaining `\n` from the extracted name**
+        company_name = company_name.replace("\n", " ")
+
+        # **Step 4: Ensure no unwanted extra words are included**
+        if "bank" not in company_name.lower() and "swift" not in company_name.lower():
+            return company_name
+
+    return "Unknown Company"
+
+
+
+
 
 def extract_total_amount(text):
     """Extracts total invoice amount safely."""
