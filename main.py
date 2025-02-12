@@ -3,26 +3,45 @@ import re
 
 app = FastAPI()
 
-def extract_company_name(text):
-    match = re.search(
-        r"(شركة\s[^\n]+|THE DIPLOMATIC CLUB|[A-Za-z\s&]+LLC|[A-Za-z\s&]+W.L.L.|[A-Za-z\s&]+Ltd|[A-Za-z\s&]+Co\.?)",
-        text, re.IGNORECASE
-    )
-    return match.group(0) if match else "Unknown Company"
-
 def extract_match(pattern, text):
+    """Safely extract a regex match from the text."""
     match = re.search(pattern, text, re.IGNORECASE)
-    return match.group(1) if match else None
+    if match:
+        if match.groups():
+            return match.group(1)  # Use first capturing group if available
+        return match.group(0)  # Otherwise, return the full match
+    return None
+
+def extract_company_name(text):
+    """Extracts the first valid company name (Arabic or English) and prevents capturing full text."""
+    match = re.search(
+        r"^(شركة\s[^\n,]+|THE DIPLOMATIC CLUB|[A-Za-z\s&]+ (LLC|W.L.L.|Ltd|Co\.?))",
+        text, re.IGNORECASE | re.MULTILINE
+    )
+    return match.group(0).strip() if match else "Unknown Company"
 
 def extract_total_amount(text):
-    match = re.search(r"TOTAL\sQAR\s([\d,]+.\d{2})", text, re.IGNORECASE)
+    """Extracts total invoice amount safely."""
+    match = re.search(r"TOTAL\s(?:AMOUNT|QAR)?\s*([\d,]+\.\d{2})", text, re.IGNORECASE)
     return float(match.group(1).replace(",", "")) if match else None
 
 def extract_invoice_breakdown(text):
-    matches = re.findall(r"(Provision.*?|Being Invoice.*?|Services.*?)\s([\d,]+.\d{2})", text, re.IGNORECASE)
-    return [{"description": match[0].strip(), "total_price": float(match[1].replace(",", ""))} for match in matches]
+    """Extracts descriptions and prices safely from invoice text."""
+    matches = re.findall(r"(Provision.*?|Being Invoice.*?|Services.*?)\s([\d,]+\.\d{2})", text, re.IGNORECASE)
+    
+    invoice_items = []
+    for match in matches:
+        try:
+            description = match[0].strip()
+            price = float(match[1].replace(",", ""))  # Convert price safely
+            invoice_items.append({"description": description, "total_price": price})
+        except ValueError:
+            print(f"⚠️ Failed to convert to float: {match[1]}")  # Debugging log
+    
+    return invoice_items
 
 def extract_invoice_data(raw_text):
+    """Parses invoice text and returns structured data."""
     invoice_data = {
         "seller": {
             "company_name": extract_company_name(raw_text),
@@ -36,7 +55,7 @@ def extract_invoice_data(raw_text):
         },
         "invoice_details": {
             "invoice_date": extract_match(r"DATE[:.]?\s*(\d{1,2}-\w+-\d{4}|\d{2}/\d{2}/\d{4})", raw_text),
-            "invoice_no": extract_match(r"INVOICE\sNO[:.]?\s*(\d+|\w+)", raw_text),
+            "invoice_no": extract_match(r"INVOICE\s(?:NO|NUMBER)[:.]?\s*([A-Za-z0-9\-]+)", raw_text),
             "currency": "QAR"
         },
         "buyer": {
@@ -57,7 +76,7 @@ def extract_invoice_data(raw_text):
         "bank_details": {
             "bank_name": extract_match(r"Bank Name[:.]?\s*([\w\s]+)", raw_text),
             "account_no": extract_match(r"Account No[:.]?\s*([\d-]+)", raw_text),
-            "iban": extract_match(r"IBAN[:.]?\s*([\w\s\d]+)", raw_text),
+            "iban": extract_match(r"IBAN[:.]?\s*(QA\d{2}[A-Z0-9]{20,30})", raw_text),
             "swift_code": extract_match(r"Swift Code[:.]?\s*([\w\d]+)", raw_text),
             "address": extract_match(r"Address[:.]?\s*(.*?),", raw_text),
             "beneficiary": extract_match(r"Beneficiary[:.]?\s*([\w\s]+)", raw_text)
@@ -65,6 +84,10 @@ def extract_invoice_data(raw_text):
         "notes": []
     }
     return invoice_data
+
+@app.get("/")
+def home():
+    return {"message": "Invoice Parsing API is running!"}
 
 @app.post("/parse_invoice/")
 async def parse_invoice(data: dict):
